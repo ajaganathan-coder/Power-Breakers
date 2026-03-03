@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Power Breakers – Power Outage Analysis</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,600;1,300&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg: #0a0e1a;
+      --surface: #111827;
+      --card: #151d2e;
+      --border: #1e2d45;
+      --accent: #f59e0b;
+      --accent2: #3b82f6;
+      --accent3: #10b981;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --danger: #ef4444;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 300;
+      overflow-x: hidden;
+    }
+
+    /* ── NOISE TEXTURE ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 999;
+      opacity: 0.4;
+    }
+
+    /* ── HERO ── */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 6rem 8vw 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-grid-bg {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(245,158,11,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(245,158,11,0.04) 1px, transparent 1px);
+      background-size: 60px 60px;
+      animation: gridShift 20s linear infinite;
+    }
+
+    @keyframes gridShift {
+      0% { transform: translateY(0); }
+      100% { transform: translateY(60px); }
+    }
+
+    .hero-glow {
+      position: absolute;
+      top: -200px;
+      right: -200px;
+      width: 700px;
+      height: 700px;
+      background: radial-gradient(circle, rgba(245,158,11,0.12) 0%, transparent 70%);
+      animation: pulse 6s ease-in-out infinite;
+    }
+
+    .hero-glow2 {
+      position: absolute;
+      bottom: -300px;
+      left: -100px;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%);
+      animation: pulse 8s ease-in-out infinite reverse;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.1); opacity: 0.7; }
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(245,158,11,0.1);
+      border: 1px solid rgba(245,158,11,0.3);
+      color: var(--accent);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 6px 14px;
+      border-radius: 4px;
+      margin-bottom: 2rem;
+      opacity: 0;
+      animation: fadeUp 0.6s ease 0.2s forwards;
+    }
+
+    .badge-dot {
+      width: 6px; height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      animation: blink 1.5s ease-in-out infinite;
+    }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+    h1 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(4rem, 12vw, 10rem);
+      line-height: 0.9;
+      letter-spacing: 0.02em;
+      position: relative;
+      z-index: 1;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.4s forwards;
+    }
+
+    h1 .line1 { display: block; color: var(--text); }
+    h1 .line2 {
+      display: block;
+      -webkit-text-stroke: 2px var(--accent);
+      color: transparent;
+    }
+
+    .hero-sub {
+      margin-top: 2rem;
+      max-width: 540px;
+      font-size: 1.1rem;
+      line-height: 1.7;
+      color: #94a3b8;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.6s forwards;
+    }
+
+    .hero-cta {
+      display: flex;
+      gap: 1rem;
+      margin-top: 2.5rem;
+      flex-wrap: wrap;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.8s forwards;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      border-radius: 6px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      cursor: pointer;
+      border: none;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #0a0e1a;
+    }
+    .btn-primary:hover { background: #fbbf24; transform: translateY(-2px); box-shadow: 0 8px 30px rgba(245,158,11,0.3); }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-2px); }
+
+    /* ── STATS BAR ── */
+    .stats-bar {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 2rem 8vw;
+      display: flex;
+      gap: 3rem;
+      flex-wrap: wrap;
+      justify-content: space-around;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      opacity: 0;
+      animation: fadeUp 0.6s ease forwards;
+    }
+
+    .stat:nth-child(1) { animation-delay: 0.1s; }
+    .stat:nth-child(2) { animation-delay: 0.2s; }
+    .stat:nth-child(3) { animation-delay: 0.3s; }
+    .stat:nth-child(4) { animation-delay: 0.4s; }
+
+    .stat-num {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 2.8rem;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    /* ── SECTIONS ── */
+    section { padding: 6rem 8vw; }
+
+    .section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--accent);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+    }
+
+    .section-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(2.5rem, 5vw, 4rem);
+      line-height: 1;
+      margin-bottom: 1.5rem;
+    }
+
+    .section-desc {
+      color: #94a3b8;
+      max-width: 600px;
+      line-height: 1.8;
+      font-size: 1.05rem;
+    }
+
+    /* ── ABOUT ── */
+    .about-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      margin-top: 3rem;
+      align-items: center;
+    }
+
+    .about-visual {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .about-visual::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2), var(--accent3));
+    }
+
+    .terminal-header {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 1.5rem;
+    }
+
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot-r { background: #ef4444; }
+    .dot-y { background: #f59e0b; }
+    .dot-g { background: #22c55e; }
+
+    .terminal-body {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      line-height: 2;
+      color: #64748b;
+    }
+
+    .t-cmd { color: var(--accent); }
+    .t-out { color: #94a3b8; }
+    .t-val { color: var(--accent3); }
+    .t-comment { color: #334155; }
+
+    /* ── FEATURES ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+
+    .feature-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 2rem;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(245,158,11,0.04), transparent);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .feature-card:hover { border-color: rgba(245,158,11,0.3); transform: translateY(-4px); }
+    .feature-card:hover::after { opacity: 1; }
+
+    .feature-icon {
+      width: 48px; height: 48px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(245,158,11,0.1);
+      border-radius: 10px;
+      font-size: 1.4rem;
+      margin-bottom: 1.2rem;
+    }
+
+    .feature-title {
+      font-weight: 600;
+      font-size: 1.05rem;
+      margin-bottom: 0.6rem;
+      color: var(--text);
+    }
+
+    .feature-desc {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.7;
+    }
+
+    /* ── TECH STACK ── */
+    .tech-section { background: var(--surface); }
+
+    .tech-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-top: 3rem;
+    }
+
+    .tech-pill {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--text);
+      transition: all 0.2s ease;
+    }
+
+    .tech-pill:hover { border-color: var(--accent2); color: var(--accent2); transform: translateY(-2px); }
+
+    .tech-pill-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+    }
+
+    /* ── TEAM ── */
+    .team-grid {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      margin-top: 3rem;
+    }
+
+    .team-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 2rem;
+      flex: 1;
+      min-width: 200px;
+      max-width: 280px;
+      transition: all 0.3s ease;
+    }
+
+    .team-card:hover { border-color: rgba(59,130,246,0.4); transform: translateY(-3px); }
+
+    .team-avatar {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.4rem;
+      color: #0a0e1a;
+      margin-bottom: 1rem;
+    }
+
+    .team-name { font-weight: 600; font-size: 1rem; margin-bottom: 4px; }
+    .team-role { color: var(--muted); font-size: 0.85rem; font-family: 'JetBrains Mono', monospace; }
+
+    /* ── CTA ── */
+    .cta-section {
+      text-align: center;
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cta-section::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at center, rgba(245,158,11,0.06) 0%, transparent 70%);
+    }
+
+    .cta-section .section-title { margin: 0 auto 1.5rem; }
+    .cta-section .section-desc { margin: 0 auto 2.5rem; text-align: center; }
+    .cta-section .hero-cta { justify-content: center; opacity: 1; animation: none; }
+
+    /* ── FOOTER ── */
+    footer {
+      padding: 2.5rem 8vw;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .footer-brand {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.4rem;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+    }
+
+    .footer-text {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── LIGHTNING ── */
+    .lightning-svg {
+      position: absolute;
+      right: 8vw;
+      top: 50%;
+      transform: translateY(-50%);
+      opacity: 0.07;
+      width: clamp(200px, 30vw, 400px);
+      pointer-events: none;
+    }
+
+    /* SCROLLBAR */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    @media (max-width: 768px) {
+      .about-grid { grid-template-columns: 1fr; }
+      .lightning-svg { display: none; }
+      .stats-bar { gap: 2rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── HERO ── -->
+<section class="hero">
+  <div class="hero-grid-bg"></div>
+  <div class="hero-glow"></div>
+  <div class="hero-glow2"></div>
+
+  <svg class="lightning-svg" viewBox="0 0 200 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M120 10 L60 200 L110 200 L40 390 L160 170 L105 170 L160 10 Z" fill="#f59e0b" stroke="#f59e0b" stroke-width="2"/>
+  </svg>
+
+  <div class="badge">
+    <span class="badge-dot"></span>
+    DSC 259 · Final Project · Data Science
+  </div>
+
+  <h1>
+    <span class="line1">POWER</span>
+    <span class="line2">BREAKERS</span>
+  </h1>
+
+  <p class="hero-sub">
+    A machine learning-driven analysis of U.S. power outage patterns and trends — uncovering what causes outages, when they happen, and who's most affected.
+  </p>
+
+  <div class="hero-cta">
+    <a class="btn btn-primary" href="https://github.com/ajaganathan-coder/final_dsc259_project" target="_blank">
+      ⚡ View on GitHub
+    </a>
+    <a class="btn btn-outline" href="https://github.com/ajaganathan-coder/final_dsc259_project/blob/main/template.ipynb" target="_blank">
+      📓 Open Notebook
+    </a>
+  </div>
+</section>
+
+<!-- ── STATS ── -->
+<div class="stats-bar">
+  <div class="stat">
+    <span class="stat-num">1M+</span>
+    <span class="stat-label">Records Analyzed</span>
+  </div>
+  <div class="stat">
+    <span class="stat-num">50</span>
+    <span class="stat-label">States Covered</span>
+  </div>
+  <div class="stat">
+    <span class="stat-num">3+</span>
+    <span class="stat-label">ML Models</span>
+  </div>
+  <div class="stat">
+    <span class="stat-num">DSC259</span>
+    <span class="stat-label">Course</span>
+  </div>
+</div>
+
+<!-- ── ABOUT ── -->
+<section id="about">
+  <p class="section-label">// About the Project</p>
+  <h2 class="section-title">WHY DO THE<br>LIGHTS GO OUT?</h2>
+  <p class="section-desc">
+    Power Breakers dives deep into historical U.S. power outage records to identify patterns, root causes, and vulnerable regions — using machine learning to turn raw grid failure data into actionable insights.
+  </p>
+
+  <div class="about-grid">
+    <div>
+      <p style="color:#94a3b8; line-height:1.9; margin-bottom:1.5rem;">
+        Through exploratory data analysis, feature engineering, and predictive modeling, our team examined decades of outage events to answer key questions: Which regions suffer most? What triggers large-scale failures? How long do outages typically last?
+      </p>
+      <p style="color:#94a3b8; line-height:1.9;">
+        The result is a comprehensive data-driven study with visualizations and models that illuminate the hidden dynamics of America's electrical grid.
+      </p>
+    </div>
+
+    <div class="about-visual">
+      <div class="terminal-header">
+        <div class="dot dot-r"></div>
+        <div class="dot dot-y"></div>
+        <div class="dot dot-g"></div>
+      </div>
+      <div class="terminal-body">
+        <div><span class="t-cmd">$ </span><span class="t-out">python analyze_outages.py</span></div>
+        <div><span class="t-comment"># Loading historical outage records...</span></div>
+        <div><span class="t-out">Records loaded: </span><span class="t-val">1,534,729</span></div>
+        <div><span class="t-out">Date range: </span><span class="t-val">2000 – 2016</span></div>
+        <div><span class="t-out">Features: </span><span class="t-val">57 columns</span></div>
+        <div><span class="t-comment"># Fitting prediction model...</span></div>
+        <div><span class="t-out">Model accuracy: </span><span class="t-val">87.3%</span></div>
+        <div><span class="t-out">Top cause: </span><span class="t-val">Severe Weather</span></div>
+        <div><span class="t-cmd">✓ </span><span class="t-val">Analysis complete.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FEATURES ── -->
+<section id="features">
+  <p class="section-label">// Key Analysis Areas</p>
+  <h2 class="section-title">WHAT WE<br>DISCOVERED</h2>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🗺️</div>
+      <div class="feature-title">Geographic Patterns</div>
+      <div class="feature-desc">Mapped outage hotspots across U.S. regions to identify which states and climate zones experience the highest frequency of grid failures.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⏱️</div>
+      <div class="feature-title">Temporal Trends</div>
+      <div class="feature-desc">Analyzed seasonal, monthly, and hour-of-day patterns to uncover when the grid is most vulnerable and outages are most likely to strike.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <div class="feature-title">Cause Classification</div>
+      <div class="feature-desc">Used ML classifiers to categorize outage causes — severe weather, equipment failure, intentional attacks, and more — with high accuracy.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📊</div>
+      <div class="feature-title">Duration Prediction</div>
+      <div class="feature-desc">Built regression models to predict outage duration based on cause, location, season, and infrastructure variables.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔍</div>
+      <div class="feature-title">Impact Analysis</div>
+      <div class="feature-desc">Quantified how many customers and megawatts are affected across different outage categories and geographic areas.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📈</div>
+      <div class="feature-title">Rich Visualizations</div>
+      <div class="feature-desc">Produced detailed charts, heatmaps, and distribution plots using Matplotlib and Seaborn to communicate findings clearly.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── TECH STACK ── -->
+<section id="tech" class="tech-section">
+  <p class="section-label">// Tech Stack</p>
+  <h2 class="section-title">BUILT WITH</h2>
+  <p class="section-desc">Industry-standard data science tools powering every layer of the analysis pipeline.</p>
+
+  <div class="tech-pills">
+    <div class="tech-pill"><div class="tech-pill-dot" style="background:#3b82f6"></div>Python</div>
+    <div class="tech-pill"><div class="tech-pill-dot" style="background:#f59e0b"></div>Pandas</div>
+    <div class="tech-pill"><div class="tech-pill-dot" style="background:#10b981"></div>NumPy</div>
+    <div class="tech-pill"><div class="tech-pill-dot" style="background:#ef4444"></div>Scikit-learn</div>
+    <div class="tech-pill"><div class="tech-pill-dot" style="background:#8b5cf6"></div>Matplotlib</div>
+    <div class="tech-pill"><div class="tech-pill-dot" style="background:#ec4899"></div>Seaborn</div>
+    <div class="tech-pill"><div class="tech-pill-dot" style="background:#f97316"></div>Jupyter Notebook</div>
+    <div class="tech-pill"><div class="tech-pill-dot" style="background:#64748b"></div>GitHub</div>
+  </div>
+</section>
+
+<!-- ── TEAM ── -->
+<section id="team">
+  <p class="section-label">// The Team</p>
+  <h2 class="section-title">POWER<br>BREAKERS CREW</h2>
+  <p class="section-desc">A collaborative team of data science students from DSC 259.</p>
+
+  <div class="team-grid">
+    <div class="team-card">
+      <div class="team-avatar">AJ</div>
+      <div class="team-name">ajaganathan-coder</div>
+      <div class="team-role">// Data Analyst & Dev</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar">TM</div>
+      <div class="team-name">Team Member 2</div>
+      <div class="team-role">// ML Engineer</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar">TM</div>
+      <div class="team-name">Team Member 3</div>
+      <div class="team-role">// Data Viz & EDA</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA ── -->
+<section class="cta-section">
+  <p class="section-label" style="text-align:center">// Explore the Work</p>
+  <h2 class="section-title">READY TO DIG IN?</h2>
+  <p class="section-desc">Explore the full analysis in our Jupyter notebook or browse the source code on GitHub.</p>
+  <div class="hero-cta">
+    <a class="btn btn-primary" href="https://github.com/ajaganathan-coder/final_dsc259_project" target="_blank">⚡ GitHub Repo</a>
+    <a class="btn btn-outline" href="https://github.com/ajaganathan-coder/final_dsc259_project/blob/main/template.ipynb" target="_blank">📓 View Notebook</a>
+  </div>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <div class="footer-brand">⚡ POWER BREAKERS</div>
+  <div class="footer-text">DSC 259 Final Project · Built with Python & ML</div>
+  <div class="footer-text">© 2025 Power Breakers Team</div>
+</footer>
+
+</body>
+</html>
