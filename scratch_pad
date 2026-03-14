@@ -1,0 +1,176 @@
+"""
+So the idea here is that we ensure our dates are in the right format. Then we define what a major outage is. Happy to change this, but doesn't really matter.
+We then build a grid of all major outages in our region temporally. We then need to build these things called lags which are basic time look back windows.
+Lag1 is last week. Lag2 is two weeks ago. Lag8 is eight weeks ago. This helps our model learn some previous trends. Then we need our train/test split.
+We can't randomly pick 80/20. The fourth section lines up our data in time and then we train our model on the first 80% of data (time wise) and
+then we test on the most recent 20%. 
+"""
+
+# ----------------------------
+# 1) Build weekly panel + label
+# ----------------------------
+df = severe_df.copy()
+
+df["OUTAGE_START_TIMESTAMP"] = pd.to_datetime(df["OUTAGE_START_TIMESTAMP"], errors="coerce")
+df = df.dropna(subset=["OUTAGE_START_TIMESTAMP", "NERC_REGION"])
+
+# Monday-anchored week start: [Mon 00:00, next Mon 00:00)
+df["week_start"] = df["OUTAGE_START_TIMESTAMP"].dt.to_period("W-MON").dt.start_time
+
+# Major criterion
+df["is_major"] = (
+    (df["CUSTOMERS_AFFECTED"] >= 50_000) |
+    (df["OUTAGE_DURATION_MINS"] >= 60) |
+    (df["DEMAND_LOSS_MW"] >= 100)
+)
+
+# Positive outage-event = severe weather AND major
+df["pos_event"] = (df["is_severe"].astype(int) == 1) & (df["is_major"].astype(int) == 1)
+
+# Weekly label y(r,w): any positive event starts in that region-week
+weekly_y = (
+    df.groupby(["NERC_REGION", "week_start"], as_index=False)
+      .agg(y=("pos_event", "max"))
+)
+
+# Complete grid of all region-weeks (important so "no outage" weeks exist)
+all_regions = np.sort(df["NERC_REGION"].unique())
+all_weeks = pd.date_range(weekly_y["week_start"].min(), weekly_y["week_start"].max(), freq="W-MON")
+
+grid = (
+    pd.MultiIndex.from_product([all_regions, all_weeks], names=["NERC_REGION", "week_start"])
+      .to_frame(index=False)
+)
+
+weekly = grid.merge(weekly_y, on=["NERC_REGION", "week_start"], how="left")
+weekly["y"] = weekly["y"].fillna(0).astype(int)
+
+
+# -----------------------------------------
+# 2) Weekly counts (for lag/rolling features)
+# -----------------------------------------
+weekly_counts = (
+    df.groupby(["NERC_REGION", "week_start"], as_index=False)
+      .agg(
+          outages=("OUTAGE_START_TIMESTAMP", "count"),
+          severe_outages=("is_severe", "sum"),
+          major_outages=("is_major", "sum"),
+          pos_events=("pos_event", "sum"),
+      )
+)
+
+weekly = weekly.merge(weekly_counts, on=["NERC_REGION", "week_start"], how="left").fillna({
+    "outages": 0,
+    "severe_outages": 0,
+    "major_outages": 0,
+    "pos_events": 0
+})
+
+weekly = weekly.sort_values(["NERC_REGION", "week_start"]).reset_index(drop=True)
+
+
+# ----------------------------
+# 3) Lag + rolling features
+# ----------------------------
+LAGS = [1, 2, 4, 8]
+BASE_COLS = ["outages", "severe_outages", "major_outages", "pos_events"]
+
+for k in LAGS:
+    for col in BASE_COLS:
+        weekly[f"{col}_lag{k}"] = weekly.groupby("NERC_REGION")[col].shift(k)
+
+# Rolling means over past windows (exclude current week via shift(1))
+weekly["pos_events_roll4_mean"] = (
+    weekly.groupby("NERC_REGION")["pos_events"]
+          .shift(1).rolling(4, min_periods=1).mean()
+)
+weekly["pos_events_roll8_mean"] = (
+    weekly.groupby("NERC_REGION")["pos_events"]
+          .shift(1).rolling(8, min_periods=1).mean()
+)
+weekly["outages_roll8_mean"] = (
+    weekly.groupby("NERC_REGION")["outages"]
+          .shift(1).rolling(8, min_periods=1).mean()
+)
+
+# "Time since last positive event" (in weeks) - computed using only past info
+def weeks_since_last_pos(s: pd.Series) -> pd.Series:
+    # s is pos_events (counts) by week for one region
+    last = -1
+    out = []
+    for i, v in enumerate(s.values):
+        out.append(np.nan if last == -1 else i - last)
+        if v > 0:
+            last = i
+    return pd.Series(out, index=s.index)
+
+weekly["weeks_since_pos_event"] = (
+    weekly.groupby("NERC_REGION")["pos_events"]
+          .apply(weeks_since_last_pos)
+)
+
+# Calendar features (known at week start; no leakage)
+weekly["month"] = weekly["week_start"].dt.month.astype(int)
+weekly["weekofyear"] = weekly["week_start"].dt.isocalendar().week.astype(int)
+
+# Drop rows where lag features are missing (early history)
+feature_cols = (
+    ["NERC_REGION", "week_start", "month", "weekofyear"] +
+    [f"{c}_lag{k}" for k in LAGS for c in BASE_COLS] +
+    ["pos_events_roll4_mean", "pos_events_roll8_mean", "outages_roll8_mean", "weeks_since_pos_event"]
+)
+
+model_df = weekly[["y"] + feature_cols].dropna().reset_index(drop=True)
+
+
+# ----------------------------
+# 4) Time-based split (by weeks)
+# ----------------------------
+weeks = np.sort(model_df["week_start"].unique())
+cutoff = weeks[int(0.8 * len(weeks))]  # last ~20% of weeks are test
+
+train = model_df[model_df["week_start"] < cutoff]
+test  = model_df[model_df["week_start"] >= cutoff]
+
+X_train = train.drop(columns=["y"])
+y_train = train["y"].astype(int)
+
+X_test = test.drop(columns=["y"])
+y_test = test["y"].astype(int)
+
+# Don't feed raw datetime into sklearn; keep calendar features instead
+X_train = X_train.drop(columns=["week_start"])
+X_test  = X_test.drop(columns=["week_start"])
+
+
+# ----------------------------
+# 5) Logistic regression pipeline + PR-AUC
+# ----------------------------
+num_cols = X_train.select_dtypes(include=["int64", "float64"]).columns
+cat_cols = X_train.select_dtypes(include=["object", "category"]).columns
+
+preprocess = ColumnTransformer(
+    transformers=[
+        ("num", StandardScaler(), num_cols),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
+    ],
+    remainder="drop",
+)
+
+clf = Pipeline(steps=[
+    ("preprocess", preprocess),
+    ("model", LogisticRegression(max_iter=5000, class_weight="balanced", solver="lbfgs")),
+])
+
+clf.fit(X_train, y_train)
+
+proba = clf.predict_proba(X_test)[:, 1]
+
+prauc = average_precision_score(y_test, proba)
+print(f"Test PR-AUC (Average Precision): {prauc:.4f}")
+
+# Optional: inspect a few threshold points
+prec, rec, thr = precision_recall_curve(y_test, proba)
+print("Precision/Recall at a few thresholds:")
+for i in np.linspace(0, len(thr) - 1, 5).astype(int):
+    print(f"  thr={thr[i]:.3f}  precision={prec[i]:.3f}  recall={rec[i]:.3f}")
