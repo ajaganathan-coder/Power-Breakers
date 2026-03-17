@@ -1,8 +1,3 @@
----
-layout: default
-title: Power Breakers
----
-
 # Power Breakers - DSC259R Final Project
 
 **Names**:
@@ -41,6 +36,13 @@ The **Purdue Major Power Outage Risk dataset** [https://engineering.purdue.edu/L
 
 The columns relevant to our analysis are:
 
+- **OUTAGE_DURATION_MINS** 
+- **US_STATE**  
+- **NERC_REGION** 
+- **CAUSE_CATEGORY** 
+- **POPPCT_URBAN** 
+- **POPPCT_RURAL** 
+
 ## Data Cleaning and Exploratory Data Analysis
 
 To prepare the data for exploratory and further analysis, the below data cleansing steps were performed:
@@ -63,16 +65,19 @@ Rows where the duration is unknown cannot be labelled and are excluded. This aff
 ### Exploratory Analysis
 
 We then addressed the below questions to understand the data and filter to the required content.
+
 *Key questions:*
 - Is outage duration right-skewed? (Almost certainly yes — most outages are short, but a tail of catastrophic events pulls the mean up.)
-- Univariate Analysis
+  
+- **Univariate Analysis**
 
 Distribution of outage durations: full range and filtered to the interquartile range (≤ 2,880 mins = 75th percentile). The IQR-filtered view reveals the distribution structure that extreme outliers obscure.
 <iframe src="iframe_figures/figure_10.html" width=800 height=600 frameBorder=0></iframe>
 
-*Bivariate Analysis*
+- **Bivariate Analysis**
 
 - Which states / NERC regions suffer the most events or the longest outages?
+- 
 <iframe src="iframe_figures/figure_11.html" width=800 height=600 frameBorder=0></iframe>
 <iframe src="iframe_figures/figure_14.html" width=800 height=600 frameBorder=0></iframe>
 
@@ -87,9 +92,8 @@ Distribution of outage durations: full range and filtered to the interquartile r
 ## Assessment of Missingness
 
 Missing data in a dataset can be **Missing Completely At Random (MCAR)**, **Missing At Random (MAR)**, or **Missing Not At Random (MNAR)**. 
-Columns containing nulls are: CLIMATE_REGION CAUSE_CATEGORY_DETAIL HURRICANE_NAMES DEMAND_LOSS_MW CUSTOMERS_AFFECTED RES_PERCENT, COM_PERCENT, IND_PERCENT POPDEN_UC, POPDEN_RURAL Before analysis, we know HURRICANE_NAMES is Missing by Design, since there can only be a hurricane name if there is a hurricane. Therefore, there is no concern here.
 
-Now, we have to determine whether the remaining columns are missing at random or not, and then appropriately deal with them.
+Columns containing nulls are: CLIMATE_REGION CAUSE_CATEGORY_DETAIL HURRICANE_NAMES DEMAND_LOSS_MW CUSTOMERS_AFFECTED RES_PERCENT, COM_PERCENT, IND_PERCENT POPDEN_UC, POPDEN_RURAL. Before analysis, we know HURRICANE_NAMES is Missing by Design, since there can only be a hurricane name if there is a hurricane. Now, we have to determine whether the remaining columns are missing at random or not, and then appropriately deal with them.
 
 We applied two statistical tests for each column with missing values:
 1. **Chi-squared test** (categorical columns) — tests whether the missingness indicator is independent of the state (`U_S__STATE`).
@@ -97,9 +101,7 @@ We applied two statistical tests for each column with missing values:
 
 Based on the results, all of the columns with missing values are correlated with some other columns in the dataset. Therefore, we completely rule out NMAR.
 
-Therefore, just getting rid of these values would introduce bias into our data. The next step therefore is imputation. We are doing a group-wise imputation of median/most common category, grouped by US state. We are doing it group-wise, since there are many variable values which would be median nationwide but not make any sense at all in certain states, such as a snow storm in Florida or a hurricane in Alaska.
-
-Based on the analysis above, we see that almost each column/state combination has other values for that state (except for Hurricane names, which we expect), so this supports our group-wise imputation.
+But getting rid of these values would introduce bias into our data. The next step therefore is imputation. We are doing a group-wise imputation of median/most common category, grouped by US state. We are doing it group-wise, since there are many variable values which would be median nationwide but not make any sense at all in certain states, such as a snow storm in Florida or a hurricane in Alaska. Based on the analysis, we determined that almost each column/state combination has other values for that state (except for Hurricane names, which we expected, so this supports our group-wise imputation.
 
 
 ## Hypothesis Testing
@@ -139,7 +141,8 @@ These regional patterns motivate including `NERC_REGION` as a predictor and perf
 
 For each NERC region r and week w, predict whether at least one major outage caused by severe weather will start in region r during that week w.
 
-*Type:* Binary classification; the model outputs a probability p(y=1|r,w).
+*Type:* 
+Binary classification; the model outputs a probability p(y=1|r,w).
 
 We will define a week as disjoint, Monday-anchored weeks [w_start, w_end) = [Mon 00:00, next Mon 00:00).
 
@@ -152,7 +155,7 @@ Weekly windows raise the base rate versus daily, better matching medium-term pla
 
 ## Baseline Model
 
-## 8. Baseline Model — Logistic Regression
+### Logistic Regression
 
 A **logistic regression** with L2 regularisation (C = 1) is a sensible baseline because:
 1. It is interpretable — we can directly inspect coefficient magnitudes.
@@ -163,7 +166,7 @@ The preprocessing pipeline applies:
 - **StandardScaler** to all numeric features (logistic regression is sensitive   to feature scale).
 - **OneHotEncoder** (drop = 'first' to avoid perfect multicollinearity) to all   categorical features.
 
-We evaluate using **PR-AUC** (area under the precision–recall curve) rather than accuracy, because the data are moderately imbalanced (about 42 % major outages) and PR-AUC better captures performance on the positive class.
+We evaluated using **PR-AUC** (area under the precision–recall curve) rather than accuracy, because the data are moderately imbalanced (about 42 % major outages) and PR-AUC better captures performance on the positive class.
 
 <iframe src="iframe_figures/baseline_model.html" width=800 height=600 frameBorder=0></iframe>
 
@@ -194,6 +197,7 @@ GradientBoostingClassifier(
 - `learning_rate=0.05` with `n_estimators=200` follows the *shrinkage*   principle: many weak updates are more robust than few strong ones.
 
 ### What we improved over the baseline
+
 1. Replaced linear decision boundary (logistic) with a non-linear ensemble.
 2. Added `is_severe` as a derived feature (created from `CAUSE_CATEGORY` *before*    the target split — this is valid because the cause category is often coded at    dispatch time for natural hazard events).
 3. Tuned regularisation.
@@ -206,6 +210,7 @@ GradientBoostingClassifier(
 We evaluated whether the Gradient Boosting model treats urban and rural states equitably. States where ≤ 80% of the population lives in urban areas are classified as **rural** (the dataset mean is ~84%).
 
 **Null Hypothesis (H₀):** The model's TPR (and FPR) is the same for urban and rural states.
+
 **Alternative Hypothesis (H₁):** There is a statistically significant difference in TPR or FPR between groups.
 
 **Test:** Permutation test (10,000 iterations each for TPR difference and FPR difference).
@@ -214,7 +219,9 @@ We evaluated whether the Gradient Boosting model treats urban and rural states e
 
 - Both permutation tests return p-values ≈ 0, so we **reject H₀** for both metrics.
 - The model correctly identifies major outages significantly less often for **urban** states (lower urban TPR).
+  
 - **Rural** areas are more frequently false-alarmed (higher rural FPR).
+- 
 - In a production deployment, this bias could lead to missed emergency responses in urban areas and unnecessary resource mobilization in rural areas.
 <iframe src="iframe_figures/TPR_Difference_Urban_-_Rural.png" width=800 height=600 frameBorder=0></iframe>
 <iframe src="iframe_figures/FPR_Difference_Urban_-_Rural.png" width=800 height=600 frameBorder=0></iframe>
