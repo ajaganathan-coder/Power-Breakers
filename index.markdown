@@ -88,8 +88,7 @@ Distribution of outage durations: full range and filtered to the interquartile r
 
 - Is there a seasonal signal in duration?
 
-<iframe src="iframe_figures/figure_15.html" width=800 height=600 frameBorder=0></iframe>
-<iframe src="iframe_figures/figure_16.html" width=800 height=600 frameBorder=0></iframe>
+<iframe src="iframe_figures/figure_climate_cause.html" width=800 height=600 frameBorder=0></iframe>
 
 - How correlated are the numeric features?
 <iframe src="iframe_figures/figure_corr.png" width=800 height=600 frameBorder=0></iframe>
